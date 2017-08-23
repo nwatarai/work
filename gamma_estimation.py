@@ -5,7 +5,7 @@ from scipy.special import gamma, digamma
 import sys
 
 class gamma_mixture(object):
-    def __init__(self, n_component=2, iter_max=1000, scale=True):
+    def __init__(self, n_component=2, iter_max=1000, scale=True, logarithm=False):
         self.n_component = n_component
         self.weights = None
         self.alpha = None
@@ -16,19 +16,28 @@ class gamma_mixture(object):
         self.weight_threshold = None
         self.scale = scale
         self.scaled_X = None
+        self.converged = False
+        self.logarithm = logarithm
 
     def fit(self, X):
         X = X.astype(np.float64)
+        if self.logarithm:
+            X = self.delete0(X)
+            X = np.log(X)
+
         if self.scale:
             X = self.scaling(X)
+
+        self.scaled_X = X
+
         if not X == None:
             self.weight_threshold = 1 / float(X.shape[0])
-            self.ndim = X.shape[1] 
+            self.ndim = X.shape[1]
             self.weights = np.ones(self.n_component) / float(self.n_component)
             self.alpha = np.random.uniform(0.1, 10.0, (self.ndim, self.n_component))
             self.lamda = np.random.uniform(0.1, 10.0, (self.ndim, self.n_component))
 
-            step_size = np.power(np.ones(self.iter_max) / (np.arange(self.iter_max) + 1), 0.2)
+            step_size = np.power(np.ones(self.iter_max) / (np.arange(self.iter_max) + 1), 0.1)
 
             for i in range(self.iter_max):
                 params = np.ravel((self.weights.ravel(), self.alpha.ravel(), self.lamda.ravel()))
@@ -37,11 +46,13 @@ class gamma_mixture(object):
                 estimated = np.ravel((self.weights.ravel(), self.alpha.ravel(), self.lamda.ravel()))
                 self.cal_BIC(X)
                 if np.allclose(params, estimated):
+                    self.converged = True
                     print "parameters have converged at step_%i" %(i + 1)
                     break
                 self.degenerate_param()
             else:
-                print "parameters may not have converged in %i times" %self.iter_max
+                pass
+                #print "parameters may not have converged in %i times" %self.iter_max
 
     def gamma_pdf(self, X):
         return self.lamda ** self.alpha * X ** (self.alpha - 1) * np.exp(- self.lamda * X) / gamma(self.alpha)
@@ -69,17 +80,22 @@ class gamma_mixture(object):
         self.lamda = self.lamda[:,~index]
         self.weights /= self.weights.sum()
 
-    def scaling(self, X):
+    def scaling(self, X, base=False):
         if X.sum() != 0:
             _X = X / X.max()
             _X[_X==0] = np.inf
             _min = np.min(_X)
             _X[np.isinf(_X)] = 0.0
             assert _min != 0
-            _X += _min / 2 
-            self.scaled_X = _X
+            if base:
+                _X += _min / 2 
+            _X = X / X.max()
             return _X 
         return None
+
+    def delete0(self, X):
+        _X = np.delete(X, np.where(X==0.0))
+        return np.transpose([_X])
 
 def pseudo_digamma(x):
     _x = x - 0.5
